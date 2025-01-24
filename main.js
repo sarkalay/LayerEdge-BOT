@@ -5,7 +5,7 @@ import { getBanner } from "./config/banner.js";
 import { colors } from "./config/colors.js";
 
 const CONFIG = {
-  PING_INTERVAL: 0.5,
+  PING_INTERVAL: 0.1,
   get PING_INTERVAL_MS() {
     return this.PING_INTERVAL * 60 * 1000;
   },
