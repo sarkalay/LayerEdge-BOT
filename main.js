@@ -1,11 +1,11 @@
 import fs from "fs/promises";
-import axios from "axios";
 import readline from "readline";
+import cloudscraper from "cloudflare-scraper";
 import { getBanner } from "./config/banner.js";
 import { colors } from "./config/colors.js";
 
 const CONFIG = {
-  PING_INTERVAL: 0.001,
+  PING_INTERVAL: 0.5,
   get PING_INTERVAL_MS() {
     return this.PING_INTERVAL * 60 * 1000;
   },
@@ -50,26 +50,44 @@ class WalletDashboard {
     }
   }
 
-  getApi() {
-    return axios.create({
-      baseURL: "https://dashboard.layeredge.io/api",
-      headers: {
-        Accept: "*/*",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Content-Type": "application/json",
-        Origin: "https://dashboard.layeredge.io",
-        Referer: "https://dashboard.layeredge.io/",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      },
-    });
+  async getApi() {
+    const headers = {
+      Accept: "*/*",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Content-Type": "application/json",
+      Origin: "https://dashboard.layeredge.io",
+      Referer: "https://dashboard.layeredge.io/",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    };
+
+    const makeRequest = async (url, method = "GET", data = null) => {
+      const options = {
+        method,
+        url: `https://dashboard.layeredge.io/api${url}`,
+        headers,
+        body: data ? JSON.stringify(data) : undefined,
+      };
+      try {
+        const response = await cloudscraper(options);
+        return JSON.parse(response);
+      } catch (error) {
+        throw new Error(`Cloudflare bypass failed: ${error.message}`);
+      }
+    };
+
+    return {
+      get: (url) => makeRequest(url, "GET"),
+      post: (url, data) => makeRequest(url, "POST", data),
+    };
   }
 
   async checkPoints(wallet) {
     try {
-      const response = await this.getApi().get(`/node-points?wallet=${wallet}`);
-      return response.data;
+      const api = await this.getApi();
+      const response = await api.get(`/node-points?wallet=${wallet}`);
+      return response;
     } catch (error) {
       throw new Error(`Check points failed: ${error.message}`);
     }
@@ -77,32 +95,24 @@ class WalletDashboard {
 
   async updatePoints(wallet) {
     try {
-      const response = await this.getApi().post("/node-points", {
+      const api = await this.getApi();
+      const response = await api.post("/node-points", {
         walletAddress: wallet,
         lastStartTime: Date.now(),
       });
-      return response.data;
+      return response;
     } catch (error) {
-      if (error.response) {
-        switch (error.response.status) {
-          case 500:
-            throw new Error("Internal Server Error");
-          case 504:
-            throw new Error("Gateway Timeout");
-          default:
-            throw new Error(`Update points failed: ${error.message}`);
-        }
-      }
       throw new Error(`Update points failed: ${error.message}`);
     }
   }
 
   async claimPoints(wallet) {
     try {
-      const response = await this.getApi().post("/claim-points", {
+      const api = await this.getApi();
+      const response = await api.post("/claim-points", {
         walletAddress: wallet,
       });
-      return response.data;
+      return response;
     } catch (error) {
       throw new Error(`Claim points failed: ${error.message}`);
     }
