@@ -26,6 +26,7 @@ class WalletDashboard {
     this.renderTimeout = null;
     this.lastRender = 0;
     this.minRenderInterval = 100;
+    this.proxies = [];
   }
 
   async initialize() {
@@ -42,15 +43,44 @@ class WalletDashboard {
 
         this.startPing(wallet);
       }
+
+      // Load proxies from proxy.txt
+      await this.loadProxies();
     } catch (error) {
       console.error(
-        `${colors.error}Error reading data.txt: ${error}${colors.reset}`
+        `${colors.error}Error reading files: ${error}${colors.reset}`
       );
       process.exit(1);
     }
   }
 
+  async loadProxies() {
+    try {
+      const proxyData = await fs.readFile("proxy.txt", "utf8");
+      this.proxies = proxyData
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line);
+    } catch (error) {
+      console.error(
+        `${colors.error}Error reading proxy.txt: ${error}${colors.reset}`
+      );
+      this.proxies = [];
+    }
+  }
+
   getApi() {
+    const proxyConfig = {};
+
+    // Randomly select a proxy from the list if available
+    if (this.proxies.length > 0) {
+      const randomProxy = this.proxies[Math.floor(Math.random() * this.proxies.length)];
+      const url = new URL(randomProxy);
+      proxyConfig.host = url.hostname;
+      proxyConfig.port = url.port || (url.protocol === "https:" ? 443 : 80);
+      proxyConfig.protocol = url.protocol.replace(":", "");
+    }
+
     return axios.create({
       baseURL: "https://dashboard.layeredge.io/api",
       headers: {
@@ -63,6 +93,7 @@ class WalletDashboard {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       },
+      proxy: Object.keys(proxyConfig).length > 0 ? proxyConfig : false,
     });
   }
 
