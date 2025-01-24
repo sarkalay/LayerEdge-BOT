@@ -1,332 +1,80 @@
-import fs from "fs/promises";
-import axios from "axios";
-import readline from "readline";
-import { getBanner } from "./config/banner.js";
-import { colors } from "./config/colors.js";
+const fs = require("fs");
+const axios = require("axios");
+const { URL } = require("url");
 
-const CONFIG = {
-  PING_INTERVAL: 0.5,
-  get PING_INTERVAL_MS() {
-    return this.PING_INTERVAL * 60 * 1000;
-  },
-};
-
-readline.emitKeypressEvents(process.stdin);
-process.stdin.setRawMode(true);
-
-class WalletDashboard {
-  constructor() {
-    this.wallets = [];
-    this.selectedIndex = 0;
-    this.currentPage = 0;
-    this.walletsPerPage = 5;
-    this.isRunning = true;
-    this.pingIntervals = new Map();
-    this.walletStats = new Map();
-    this.renderTimeout = null;
-    this.lastRender = 0;
-    this.minRenderInterval = 100;
-    this.proxies = [];
-  }
-
-  async initialize() {
-    try {
-      const data = await fs.readFile("data.txt", "utf8");
-      this.wallets = data.split("\n").filter((line) => line.trim() !== "");
-      for (let wallet of this.wallets) {
-        this.walletStats.set(wallet, {
-          status: "Starting",
-          lastPing: "-",
-          points: 0,
-          error: null,
-        });
-
-        this.startPing(wallet);
-      }
-
-      // Load proxies from proxy.txt
-      await this.loadProxies();
-    } catch (error) {
-      console.error(
-        `${colors.error}Error reading files: ${error}${colors.reset}`
-      );
-      process.exit(1);
-    }
-  }
-
-  async loadProxies() {
-    try {
-      const proxyData = await fs.readFile("proxy.txt", "utf8");
-      this.proxies = proxyData
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line);
-    } catch (error) {
-      console.error(
-        `${colors.error}Error reading proxy.txt: ${error}${colors.reset}`
-      );
-      this.proxies = [];
-    }
-  }
-
-  getApi() {
-    const proxyConfig = {};
-
-    // Randomly select a proxy from the list if available
-    if (this.proxies.length > 0) {
-      const randomProxy = this.proxies[Math.floor(Math.random() * this.proxies.length)];
-      const url = new URL(randomProxy);
-      proxyConfig.host = url.hostname;
-      proxyConfig.port = url.port || (url.protocol === "https:" ? 443 : 80);
-      proxyConfig.protocol = url.protocol.replace(":", "");
+class LayerEdgeBot {
+    constructor() {
+        this.wallet = "your_wallet_address"; // Replace with your wallet address
+        this.proxies = this.loadProxies();
     }
 
-    return axios.create({
-      baseURL: "https://dashboard.layeredge.io/api",
-      headers: {
-        Accept: "*/*",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Content-Type": "application/json",
-        Origin: "https://dashboard.layeredge.io",
-        Referer: "https://dashboard.layeredge.io/",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      },
-      proxy: Object.keys(proxyConfig).length > 0 ? proxyConfig : false,
-    });
-  }
-
-  async checkPoints(wallet) {
-    try {
-      const response = await this.getApi().get(`/node-points?wallet=${wallet}`);
-      return response.data;
-    } catch (error) {
-      throw new Error(`Check points failed: ${error.message}`);
-    }
-  }
-
-  async updatePoints(wallet) {
-    try {
-      const response = await this.getApi().post("/node-points", {
-        walletAddress: wallet,
-        lastStartTime: Date.now(),
-      });
-      return response.data;
-    } catch (error) {
-      if (error.response) {
-        switch (error.response.status) {
-          case 500:
-            throw new Error("Internal Server Error");
-          case 504:
-            throw new Error("Gateway Timeout");
-          default:
-            throw new Error(`Update points failed: ${error.message}`);
+    loadProxies() {
+        try {
+            const proxyFileContent = fs.readFileSync("proxy.txt", "utf8");
+            return proxyFileContent.split("\n").filter((line) => line.trim() !== "");
+        } catch (error) {
+            console.error("Error loading proxies:", error.message);
+            return [];
         }
-      }
-      throw new Error(`Update points failed: ${error.message}`);
-    }
-  }
-
-  async claimPoints(wallet) {
-    try {
-      const response = await this.getApi().post("/claim-points", {
-        walletAddress: wallet,
-      });
-      return response.data;
-    } catch (error) {
-      throw new Error(`Claim points failed: ${error.message}`);
-    }
-  }
-
-  async startPing(wallet) {
-    if (this.pingIntervals.has(wallet)) {
-      return;
     }
 
-    try {
-      await this.claimPoints(wallet);
-      this.walletStats.get(wallet).status = "Claimed";
-    } catch (error) {
-      this.walletStats.get(wallet).status = "Claim Failed";
+    getApi() {
+        const proxyConfig = {};
+
+        if (this.proxies.length > 0) {
+            const randomProxy = this.proxies[Math.floor(Math.random() * this.proxies.length)];
+            const url = new URL(randomProxy);
+
+            proxyConfig.host = url.hostname;
+            proxyConfig.port = url.port || (url.protocol === "https:" ? 443 : 80);
+            proxyConfig.protocol = url.protocol.replace(":", "");
+            
+            // Add authentication if username and password are provided
+            if (url.username && url.password) {
+                proxyConfig.auth = {
+                    username: decodeURIComponent(url.username),
+                    password: decodeURIComponent(url.password),
+                };
+            }
+        }
+
+        return axios.create({
+            baseURL: "https://dashboard.layeredge.io/api",
+            headers: {
+                Accept: "*/*",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Content-Type": "application/json",
+                Origin: "https://dashboard.layeredge.io",
+                Referer: "https://dashboard.layeredge.io/",
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            },
+            proxy: Object.keys(proxyConfig).length > 0 ? proxyConfig : false,
+        });
     }
 
-    try {
-      const result = await this.updatePoints(wallet);
-      const stats = this.walletStats.get(wallet);
-      stats.lastPing = new Date().toLocaleTimeString();
-      stats.points = result.nodePoints || stats.points;
-      stats.status = "Active";
-      stats.error = null;
-    } catch (error) {
-      const stats = this.walletStats.get(wallet);
-      stats.status = "Error";
-      stats.error = error.message;
+    async fetchData() {
+        try {
+            const api = this.getApi();
+            const response = await api.get(`/v1/wallet/${this.wallet}`);
+            console.log("Data fetched successfully:", response.data);
+        } catch (error) {
+            console.error("Error fetching data:", error.response?.status, error.message);
+        }
     }
 
-    const pingInterval = setInterval(async () => {
-      try {
-        const result = await this.updatePoints(wallet);
-        const stats = this.walletStats.get(wallet);
-        stats.lastPing = new Date().toLocaleTimeString();
-        stats.points = result.nodePoints || stats.points;
-        stats.status = "Active";
-        stats.error = null;
-      } catch (error) {
-        const stats = this.walletStats.get(wallet);
-        stats.status = "Error";
-        stats.error = error.message;
-      }
-      this.renderDashboard();
-    }, CONFIG.PING_INTERVAL_MS);
-
-    this.pingIntervals.set(wallet, pingInterval);
-    this.renderDashboard();
-  }
-
-  renderDashboard() {
-    const now = Date.now();
-    if (now - this.lastRender < this.minRenderInterval) {
-      if (this.renderTimeout) {
-        clearTimeout(this.renderTimeout);
-      }
-      this.renderTimeout = setTimeout(() => {
-        this.actualRender();
-      }, this.minRenderInterval);
-      return;
+    async updatePoints() {
+        try {
+            const api = this.getApi();
+            const response = await api.post(`/v1/points/${this.wallet}`);
+            console.log("Points updated successfully:", response.data);
+        } catch (error) {
+            console.error("Error updating points:", error.response?.status, error.message);
+        }
     }
-
-    this.actualRender();
-  }
-
-  actualRender() {
-    this.lastRender = Date.now();
-    let output = [];
-
-    output.push("\x1b[2J\x1b[H");
-
-    output.push(getBanner());
-
-    const startIndex = this.currentPage * this.walletsPerPage;
-    const endIndex = Math.min(
-      startIndex + this.walletsPerPage,
-      this.wallets.length
-    );
-    const totalPages = Math.ceil(this.wallets.length / this.walletsPerPage);
-
-    for (let i = startIndex; i < endIndex; i++) {
-      const wallet = this.wallets[i];
-      const stats = this.walletStats.get(wallet);
-      const prefix =
-        i === this.selectedIndex ? `${colors.cyan}→${colors.reset} ` : "  ";
-      const shortWallet = `${wallet.substr(0, 6)}...${wallet.substr(-4)}`;
-
-      output.push(
-        `${prefix}Wallet: ${colors.accountName}${shortWallet}${colors.reset}`
-      );
-      output.push(
-        `   Status: ${this.getStatusColor(stats.status)}${stats.status}${
-          colors.reset
-        }`
-      );
-      output.push(`   Points: ${colors.info}${stats.points}${colors.reset}`);
-      output.push(
-        `   Last Ping: ${colors.info}${stats.lastPing}${colors.reset}`
-      );
-      if (stats.error) {
-        output.push(`   Error: ${colors.error}${stats.error}${colors.reset}`);
-      }
-      output.push("");
-    }
-
-    output.push(
-      `\n${colors.menuBorder}Page ${this.currentPage + 1}/${totalPages}${
-        colors.reset
-      }`
-    );
-    output.push(`\n${colors.menuTitle}Configuration:${colors.reset}`);
-    output.push(
-      `${colors.menuOption}Ping Interval: ${CONFIG.PING_INTERVAL} minute(s)${colors.reset}`
-    );
-    output.push(`\n${colors.menuTitle}Controls:${colors.reset}`);
-    output.push(
-      `${colors.menuOption}↑/↓: Navigate | ←/→: Change Page | Ctrl+C: Exit${colors.reset}\n`
-    );
-
-    process.stdout.write(output.join("\n"));
-  }
-
-  getStatusColor(status) {
-    switch (status) {
-      case "Active":
-        return colors.success;
-      case "Error":
-        return colors.error;
-      case "Claimed":
-        return colors.taskComplete;
-      case "Claim Failed":
-        return colors.taskFailed;
-      case "Starting":
-        return colors.taskInProgress;
-      default:
-        return colors.reset;
-    }
-  }
-
-  handleKeyPress(str, key) {
-    const startIndex = this.currentPage * this.walletsPerPage;
-    const endIndex = Math.min(
-      startIndex + this.walletsPerPage,
-      this.wallets.length
-    );
-    const totalPages = Math.ceil(this.wallets.length / this.walletsPerPage);
-
-    if (key.name === "up" && this.selectedIndex > startIndex) {
-      this.selectedIndex--;
-      this.renderDashboard();
-    } else if (key.name === "down" && this.selectedIndex < endIndex - 1) {
-      this.selectedIndex++;
-      this.renderDashboard();
-    } else if (key.name === "left" && this.currentPage > 0) {
-      this.currentPage--;
-      this.selectedIndex = this.currentPage * this.walletsPerPage;
-      this.renderDashboard();
-    } else if (key.name === "right" && this.currentPage < totalPages - 1) {
-      this.currentPage++;
-      this.selectedIndex = this.currentPage * this.walletsPerPage;
-      this.renderDashboard();
-    }
-  }
-
-  async start() {
-    process.on("SIGINT", function () {
-      console.log(`\n${colors.info}Shutting down...${colors.reset}`);
-      process.exit();
-    });
-
-    process.on("exit", () => {
-      for (let [wallet, interval] of this.pingIntervals) {
-        clearInterval(interval);
-      }
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-    });
-
-    await this.initialize();
-    this.renderDashboard();
-
-    process.stdin.on("keypress", (str, key) => {
-      if (key.ctrl && key.name === "c") {
-        process.emit("SIGINT");
-      } else {
-        this.handleKeyPress(str, key);
-      }
-    });
-  }
 }
 
-const dashboard = new WalletDashboard();
-dashboard.start().catch((error) => {
-  console.error(`${colors.error}Fatal error: ${error}${colors.reset}`);
-  process.exit(1);
-});
+const bot = new LayerEdgeBot();
+bot.fetchData();
+bot.updatePoints();
