@@ -3,7 +3,7 @@ import axios from "axios";
 import readline from "readline";
 import { getBanner } from "./config/banner.js";
 import { colors } from "./config/colors.js";
-import HttpsProxyAgent from "https-proxy-agent"; // Import the HttpsProxyAgent
+import axiosProxyFix from "axios-proxy-fix"; // Import the proxy fix
 
 const CONFIG = {
   PING_INTERVAL: 0.5,
@@ -27,7 +27,7 @@ class WalletDashboard {
     this.renderTimeout = null;
     this.lastRender = 0;
     this.minRenderInterval = 100;
-    this.proxy = null; // Placeholder for proxy configuration
+    this.proxy = null;
   }
 
   // Load the proxy from proxy.txt
@@ -41,6 +41,7 @@ class WalletDashboard {
         const [host, port] = hostPort.split(':');
         
         this.proxy = `http://${username}:${password}@${host}:${port}`;
+        console.log(`Using Proxy: ${this.proxy}`); // Log the proxy being used
       }
     } catch (error) {
       console.error(`${colors.error}Error reading proxy.txt: ${error}${colors.reset}`);
@@ -63,9 +64,13 @@ class WalletDashboard {
       },
     };
 
-    // If proxy exists, use the https-proxy-agent for Axios
+    // If proxy exists, use the axios-proxy-fix for Axios
     if (this.proxy) {
-      const agent = new HttpsProxyAgent(this.proxy); // Create the proxy agent
+      axiosConfig.proxy = false; // Disable Axios default proxy behavior
+      axiosConfig.headers['Proxy'] = this.proxy; // Attach proxy to headers
+      const agent = new axiosProxyFix.Agent({
+        proxy: this.proxy,
+      });
       axiosConfig.httpAgent = agent; // For HTTP requests
       axiosConfig.httpsAgent = agent; // For HTTPS requests
     }
@@ -75,21 +80,25 @@ class WalletDashboard {
 
   async checkPoints(wallet) {
     try {
+      console.log(`Checking points for wallet: ${wallet}`);
       const response = await this.getApi().get(`/node-points?wallet=${wallet}`);
       return response.data;
     } catch (error) {
+      console.error(`Check points failed for wallet: ${wallet}`);
       throw new Error(`Check points failed: ${error.message}`);
     }
   }
 
   async updatePoints(wallet) {
     try {
+      console.log(`Updating points for wallet: ${wallet}`);
       const response = await this.getApi().post("/node-points", {
         walletAddress: wallet,
         lastStartTime: Date.now(),
       });
       return response.data;
     } catch (error) {
+      console.error(`Update points failed for wallet: ${wallet}`);
       if (error.response) {
         switch (error.response.status) {
           case 500:
@@ -106,11 +115,13 @@ class WalletDashboard {
 
   async claimPoints(wallet) {
     try {
+      console.log(`Claiming points for wallet: ${wallet}`);
       const response = await this.getApi().post("/claim-points", {
         walletAddress: wallet,
       });
       return response.data;
     } catch (error) {
+      console.error(`Claim points failed for wallet: ${wallet}`);
       throw new Error(`Claim points failed: ${error.message}`);
     }
   }
@@ -288,7 +299,7 @@ class WalletDashboard {
       process.stdin.pause();
     });
 
-    await this.loadProxy(); // Load proxy settings
+    await this.loadProxy(); // Ensure proxy is loaded before initializing
     await this.initialize();
     this.renderDashboard();
 
