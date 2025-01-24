@@ -3,10 +3,9 @@ import axios from "axios";
 import readline from "readline";
 import { getBanner } from "./config/banner.js";
 import { colors } from "./config/colors.js";
-import axiosProxyFix from "axios-proxy-fix"; // Import the proxy fix
 
 const CONFIG = {
-  PING_INTERVAL: 0.5,
+  PING_INTERVAL: 0.001,
   get PING_INTERVAL_MS() {
     return this.PING_INTERVAL * 60 * 1000;
   },
@@ -27,30 +26,32 @@ class WalletDashboard {
     this.renderTimeout = null;
     this.lastRender = 0;
     this.minRenderInterval = 100;
-    this.proxy = null;
   }
 
-  // Load the proxy from proxy.txt
-  async loadProxy() {
+  async initialize() {
     try {
-      const data = await fs.readFile("proxy.txt", "utf8");
-      const proxyConfig = data.trim();
-      if (proxyConfig) {
-        const [usernamePassword, hostPort] = proxyConfig.split('@');
-        const [username, password] = usernamePassword.split(':');
-        const [host, port] = hostPort.split(':');
-        
-        this.proxy = `http://${username}:${password}@${host}:${port}`;
-        console.log(`Using Proxy: ${this.proxy}`); // Log the proxy being used
+      const data = await fs.readFile("data.txt", "utf8");
+      this.wallets = data.split("\n").filter((line) => line.trim() !== "");
+      for (let wallet of this.wallets) {
+        this.walletStats.set(wallet, {
+          status: "Starting",
+          lastPing: "-",
+          points: 0,
+          error: null,
+        });
+
+        this.startPing(wallet);
       }
     } catch (error) {
-      console.error(`${colors.error}Error reading proxy.txt: ${error}${colors.reset}`);
+      console.error(
+        `${colors.error}Error reading data.txt: ${error}${colors.reset}`
+      );
+      process.exit(1);
     }
   }
 
-  // Create the API client with proxy support
   getApi() {
-    const axiosConfig = {
+    return axios.create({
       baseURL: "https://dashboard.layeredge.io/api",
       headers: {
         Accept: "*/*",
@@ -62,43 +63,26 @@ class WalletDashboard {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       },
-    };
-
-    // If proxy exists, use the axios-proxy-fix for Axios
-    if (this.proxy) {
-      axiosConfig.proxy = false; // Disable Axios default proxy behavior
-      axiosConfig.headers['Proxy'] = this.proxy; // Attach proxy to headers
-      const agent = new axiosProxyFix.Agent({
-        proxy: this.proxy,
-      });
-      axiosConfig.httpAgent = agent; // For HTTP requests
-      axiosConfig.httpsAgent = agent; // For HTTPS requests
-    }
-
-    return axios.create(axiosConfig);
+    });
   }
 
   async checkPoints(wallet) {
     try {
-      console.log(`Checking points for wallet: ${wallet}`);
       const response = await this.getApi().get(`/node-points?wallet=${wallet}`);
       return response.data;
     } catch (error) {
-      console.error(`Check points failed for wallet: ${wallet}`);
       throw new Error(`Check points failed: ${error.message}`);
     }
   }
 
   async updatePoints(wallet) {
     try {
-      console.log(`Updating points for wallet: ${wallet}`);
       const response = await this.getApi().post("/node-points", {
         walletAddress: wallet,
         lastStartTime: Date.now(),
       });
       return response.data;
     } catch (error) {
-      console.error(`Update points failed for wallet: ${wallet}`);
       if (error.response) {
         switch (error.response.status) {
           case 500:
@@ -115,13 +99,11 @@ class WalletDashboard {
 
   async claimPoints(wallet) {
     try {
-      console.log(`Claiming points for wallet: ${wallet}`);
       const response = await this.getApi().post("/claim-points", {
         walletAddress: wallet,
       });
       return response.data;
     } catch (error) {
-      console.error(`Claim points failed for wallet: ${wallet}`);
       throw new Error(`Claim points failed: ${error.message}`);
     }
   }
@@ -299,7 +281,6 @@ class WalletDashboard {
       process.stdin.pause();
     });
 
-    await this.loadProxy(); // Ensure proxy is loaded before initializing
     await this.initialize();
     this.renderDashboard();
 
