@@ -3,9 +3,10 @@ import axios from "axios";
 import readline from "readline";
 import { getBanner } from "./config/banner.js";
 import { colors } from "./config/colors.js";
+import HttpsProxyAgent from "https-proxy-agent"; // Import the HttpsProxyAgent
 
 const CONFIG = {
-  PING_INTERVAL: 0.1,
+  PING_INTERVAL: 0.5,
   get PING_INTERVAL_MS() {
     return this.PING_INTERVAL * 60 * 1000;
   },
@@ -29,6 +30,7 @@ class WalletDashboard {
     this.proxy = null; // Placeholder for proxy configuration
   }
 
+  // Load the proxy from proxy.txt
   async loadProxy() {
     try {
       const data = await fs.readFile("proxy.txt", "utf8");
@@ -37,20 +39,15 @@ class WalletDashboard {
         const [usernamePassword, hostPort] = proxyConfig.split('@');
         const [username, password] = usernamePassword.split(':');
         const [host, port] = hostPort.split(':');
-        this.proxy = {
-          host,
-          port: parseInt(port, 10),
-          auth: {
-            username,
-            password,
-          },
-        };
+        
+        this.proxy = `http://${username}:${password}@${host}:${port}`;
       }
     } catch (error) {
       console.error(`${colors.error}Error reading proxy.txt: ${error}${colors.reset}`);
     }
   }
 
+  // Create the API client with proxy support
   getApi() {
     const axiosConfig = {
       baseURL: "https://dashboard.layeredge.io/api",
@@ -66,9 +63,11 @@ class WalletDashboard {
       },
     };
 
-    // If proxy exists, add it to Axios config
+    // If proxy exists, use the https-proxy-agent for Axios
     if (this.proxy) {
-      axiosConfig.proxy = this.proxy;
+      const agent = new HttpsProxyAgent(this.proxy); // Create the proxy agent
+      axiosConfig.httpAgent = agent; // For HTTP requests
+      axiosConfig.httpsAgent = agent; // For HTTPS requests
     }
 
     return axios.create(axiosConfig);
